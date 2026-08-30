@@ -1,8 +1,8 @@
-# Self-Healing SRE Agent — managed system + observability stack.
-# In scope for CHG-001: traefik, api, db, otel-collector, jaeger, prometheus, grafana.
-# Deferred: `agent` and `locust` services (separate change).
+# Self-Healing SRE Agent — full demo stack.
+# traefik, api, db, otel-collector, jaeger, prometheus, grafana + agent, locust.
 #
-#   docker compose up --build -d --scale api=2
+#   make up            # docker compose up --build -d --scale api=2
+#   make scenario-errors | scenario-traffic | scenario-latency
 
 name: sre-demo
 
@@ -118,10 +118,56 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
     depends_on:
       - prometheus
+
+  agent:
+    build: ./agent
+    restart: unless-stopped
+    environment:
+      AGENT_PROMETHEUS_URL: http://prometheus:9090
+      AGENT_JAEGER_URL: http://jaeger:16686
+      AGENT_API_BASE_URL: http://traefik:80
+      AGENT_ADMIN_TOKEN: ${ADMIN_TOKEN:-dev-admin-token}
+      AGENT_COMPOSE_PROJECT: sre-demo
+      AGENT_COMPOSE_FILE: /workspace/docker-compose.yml
+      AGENT_API_SERVICE: api
+      AGENT_MIN_REPLICAS: ${API_REPLICAS:-2}
+      AGENT_MAX_REPLICAS: ${AGENT_MAX_REPLICAS:-6}
+      AGENT_POLL_INTERVAL_SECONDS: ${AGENT_POLL_INTERVAL_SECONDS:-10}
+      AGENT_VERIFY_COOLDOWN_SECONDS: ${AGENT_VERIFY_COOLDOWN_SECONDS:-25}
+      AGENT_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AGENT_ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
+      AGENT_SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    volumes:
+      # The agent shells out to `docker compose` against the host daemon, so it
+      # needs the socket and the repo (relative build contexts + this file).
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./:/workspace:ro
+    ports:
+      - "${AGENT_UI_PORT:-8000}:8000"
+    depends_on:
+      - prometheus
+      - jaeger
+      - traefik
+
+  locust:
+    image: locustio/locust:2.31.8
+    restart: unless-stopped
+    volumes:
+      - ./load:/mnt/locust:ro
+    environment:
+      LOCUST_SCENARIO: ${LOCUST_SCENARIO:-baseline}
+    command: >-
+      -f /mnt/locust/locustfile.py
+      --host http://traefik:80
+    ports:
+      - "${LOCUST_WEB_PORT:-8089}:8089"
+    depends_on:
+      - traefik
 
 volumes:
   pgdata:
