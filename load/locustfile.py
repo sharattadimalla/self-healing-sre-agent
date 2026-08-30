@@ -19,13 +19,14 @@ from locust import HttpUser, LoadTestShape, between, task
 ITEMS = ["widget", "sprocket", "gizmo", "cog", "flange", "bracket"]
 SCENARIO = os.getenv("LOCUST_SCENARIO", "baseline").lower()
 
-# The api response cache is invalidated on every write, so the latency scenario
-# (which relies on `enable_cache` recovering p95) needs a read-heavy mix.
-_READ_HEAVY = SCENARIO == "latency"
-W_LIST = 20 if _READ_HEAVY else 5
-W_CREATE = 1 if _READ_HEAVY else 3
-W_GET = 6 if _READ_HEAVY else 2
-W_PATCH = 1
+# The latency scenario relies on `enable_cache` recovering p95, so it drives the
+# one cacheable endpoint only — writes would invalidate the cache and the
+# per-id GET also pays the injected DB latency.
+_READ_ONLY = SCENARIO == "latency"
+W_LIST = 1 if _READ_ONLY else 5
+W_CREATE = 0 if _READ_ONLY else 3
+W_GET = 0 if _READ_ONLY else 2
+W_PATCH = 0 if _READ_ONLY else 1
 
 
 class OrderUser(HttpUser):

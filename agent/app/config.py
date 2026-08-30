@@ -26,16 +26,18 @@ class Settings(BaseSettings):
 
     # --- control loop ---
     poll_interval_seconds: float = 10.0
-    verify_cooldown_seconds: float = 20.0
+    # A scale-out needs replica warmup + Prometheus re-discovery + the 1m rate()
+    # window to settle, so give verify a generous cooldown.
+    verify_cooldown_seconds: float = 55.0
     verify_max_retries: int = 1
-    baseline_alpha: float = 0.2  # EWMA weight for new healthy samples
+    baseline_alpha: float = 0.25  # EWMA weight for new healthy samples
 
     # --- detection thresholds ---
-    throughput_ratio_high: float = 1.5   # vs. baseline
+    throughput_ratio_high: float = 2.0   # vs. baseline
     p95_ratio_high: float = 1.5          # vs. baseline
     error_rate_abs: float = 0.05         # absolute 5xx fraction
     p95_abs_floor_seconds: float = 0.25  # ignore ratio noise below this p95
-    min_throughput_rps: float = 1.0      # don't alarm on an idle system
+    min_throughput_rps: float = 5.0      # don't alarm on an idle system
     db_span_dominant_fraction: float = 0.5  # DB share of trace time -> "DB dominant"
 
     # --- LLM (optional) ---

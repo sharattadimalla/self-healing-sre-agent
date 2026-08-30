@@ -89,7 +89,9 @@ CATALOG: dict[str, Action] = {
 ANOMALY_ACTIONS: dict[str, list[str]] = {
     "SATURATION": ["scale_api", "enable_rate_limit"],
     "ERROR_SPIKE": ["disable_feature_flag"],
-    "LATENCY_SPIKE": ["enable_cache", "restart_api"],
+    # enable_cache is the actual fix for a slow read-path dependency; a container
+    # restart only adds a cold-cache regression while the fault persists.
+    "LATENCY_SPIKE": ["enable_cache"],
 }
 
 

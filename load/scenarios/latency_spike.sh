@@ -9,13 +9,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/_common.sh"
 
 require_stack
+reset_system
 trap 'clear_fault; stop_load' EXIT
 
 seed_orders 50
 start_load latency 25 12m
 
-say "Baseline for 30s so the agent warms its rolling baseline"
-sleep 30
+say "Baseline for 90s so the agent warms its rolling baseline"
+sleep 90
 
 say "Injecting latency fault: +800ms on the DB path"
 fault '{"type":"latency","ms":800,"target":"db"}'

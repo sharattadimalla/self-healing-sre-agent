@@ -30,9 +30,9 @@ def test_saturation_pairs_scale_with_rate_limit():
     assert ids == ["scale_api", "enable_rate_limit"]
 
 
-def test_latency_pairs_cache_with_restart():
+def test_latency_recommends_cache():
     ids = [a.id for a in candidates_for("LATENCY_SPIKE")]
-    assert ids == ["enable_cache", "restart_api"]
+    assert ids == ["enable_cache"]
 
 
 def test_fallback_recommendation_shape():

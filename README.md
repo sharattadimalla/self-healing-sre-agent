@@ -57,9 +57,19 @@ exercises the reject path (nothing is applied, incident → `REJECTED`).
 
 | Scenario | Injected | Signals | Diagnosis | Recommended action | Verify |
 |---|---|---|---|---|---|
-| Traffic spike | locust ramp 10▶300 users | thru↑, p95↑, 5xx↑ | saturation / under-provisioned | `scale_api` (docker) + `enable_rate_limit` (api) | p95 back in band, 5xx→0 |
-| Error spike | `POST /admin/fault {type:error, magnitude:0.3}` | 5xx↑, thru/p95 flat | bad feature flag / deploy | `disable_feature_flag` (api) | 5xx→~0 |
-| Latency spike | `POST /admin/fault {type:latency, ms:800, target:db}` | p95↑, Jaeger DB span dominates | slow downstream dependency | `enable_cache` (api) + `restart_api` (docker) | p95 recovers |
+| Traffic spike | locust ramp 10▶300 users | thru≫baseline, p95↑ | saturation / under-provisioned | `scale_api` 2▶4 (docker) + `enable_rate_limit` (api) | p95 back in band, `docker compose ps` shows 4 |
+| Error spike | `POST /admin/fault {type:error, magnitude:0.3}` | 5xx↑, thru/p95 flat | bad feature flag / deploy | `disable_feature_flag` (api) | 5xx→~0 (fault row stays; rollback suppresses it) |
+| Latency spike | `POST /admin/fault {type:latency, ms:800, target:db}` | p95↑, Jaeger DB span dominates | slow downstream dependency | `enable_cache` (api) | read-path p95 recovers while DB stays slow |
+
+Each `load/scenarios/*.sh` is self-contained and re-runnable: it drains prior
+Prometheus windows, restarts the agent so it warms a fresh baseline, seeds
+orders, starts its own load, injects the fault, waits for the incident, approves
+it (`AUTO_APPROVE=1`), and confirms recovery — then a trap clears the fault and
+kills every locust container. `APPROVE_DECISION=reject` exercises the reject path
+(incident → `REJECTED`, nothing applied).
+
+All three verified end-to-end on Docker Desktop (`docker compose` v2.30, api
+`cpus: 0.35` × 2 replicas).
 
 ## How the agent works
 
@@ -73,9 +83,11 @@ collect ▶ detect ▶ (END if HEALTHY | analyze) ▶ recommend
 - **collect** — instant PromQL for throughput `sum(rate(http_requests_total[1m]))`,
   5xx ratio, and p95 from `http_request_duration_seconds_bucket`; each compared to
   a rolling EWMA baseline held in agent memory (updated only while `HEALTHY`).
-- **detect** — threshold rules → `SATURATION` (thru↑ & p95↑ & errors↑),
-  `ERROR_SPIKE` (errors↑, rest flat), `LATENCY_SPIKE` (p95↑, errors flat), else
-  `HEALTHY`. Thresholds live in `agent/app/config.py`.
+- **detect** — threshold rules → `SATURATION` (p95↑ **and** [throughput ≫
+  baseline **or** 5xx↑]), `ERROR_SPIKE` (5xx↑, latency flat), `LATENCY_SPIKE`
+  (p95↑, 5xx flat, at normal load), else `HEALTHY`. Thresholds live in
+  `agent/app/config.py`. The baseline stops updating once signals start to ramp,
+  so a slow climb into an anomaly can't drag the reference with it.
 - **analyze** — pulls a Jaeger span-duration breakdown (DB vs. app self-time) and
   builds a root-cause hypothesis. **Claude-backed** (`claude-opus-5`, adaptive
   thinking, JSON-schema structured output) when `ANTHROPIC_API_KEY` is set;
@@ -88,8 +100,9 @@ collect ▶ detect ▶ (END if HEALTHY | analyze) ▶ recommend
   `scale_api` / `restart_api`; `POST /admin/remediation` for the app-level knobs
   (`enable_cache`, `disable_feature_flag`, `enable_rate_limit`, `reset_pool`).
   Records before/after replica count + admin state.
-- **verify** — cooldown, re-collect, confirm the signal is back in band; one
-  extra recheck, then escalate (log + Slack).
+- **verify** — cooldown (~55s, long enough for a scale-out + the 1m PromQL
+  window to settle), re-collect, confirm the signal is back in band; one extra
+  recheck, then escalate (log + Slack).
 
 The poll loop (`agent/app/main.py`, default every 10s) runs one graph thread at a
 time and also serves the approval API + web UI:
@@ -128,11 +141,22 @@ docker-compose.yml  Makefile  .env.example
 
 - Local Docker with the compose v2 plugin. The `agent` image bundles the docker
   CLI + compose plugin (copied from `docker:27-cli`).
+- **Prometheus runs as `user: root`** so its `docker_sd` can read the mounted
+  docker socket to discover `api` replicas (Docker Desktop owns the socket
+  `root:root`; the image's default `nobody` user gets `EACCES`).
+- **`api` is CPU-limited (`cpus: 0.35` × 2 replicas, override with `API_CPUS`)**
+  so the traffic-spike scenario genuinely saturates; `scale_api` to 4 restores
+  headroom.
+- The `api` response cache is per-replica, in-process, TTL `CACHE_TTL_SECONDS`
+  (30s), and is cleared on every write — so the latency scenario drives the one
+  cacheable endpoint only.
 - Single host, single Postgres (not scaled). "Distributed tracing" = API replica
   ▶ DB spans stitched via OTEL context propagation.
 - Locust runs one `LoadTestShape` per process, so the ramp profile is selected by
   the `LOCUST_SCENARIO` env var (`baseline` | `traffic` | `errors` | `latency`)
-  rather than by swapping shape classes.
+  rather than by swapping shape classes. Scenario scripts drive load with
+  `docker compose run` and tear down **all** locust containers afterwards; bring
+  the standing web-UI service back with `docker compose up -d locust`.
 - `ANTHROPIC_API_KEY` is optional; without it the agent uses the rule table and
   still completes all three scenarios.
 - Ports are all overridable in `.env`.

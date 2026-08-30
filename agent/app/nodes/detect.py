@@ -43,8 +43,7 @@ def classify(signals: dict, baseline: dict, s: Settings) -> tuple[str, list[str]
         and p95_ratio >= s.p95_ratio_high
         and p95 >= s.p95_abs_floor_seconds
     )
-    thru_flat = thru_ratio is None or thru_ratio < s.throughput_ratio_high
-    p95_flat = p95_ratio is None or p95_ratio < s.p95_ratio_high
+    p95_flat = not p95_up
 
     notes.append(
         f"thru={thru:.2f}rps (x{thru_ratio:.2f})" if thru_ratio
@@ -55,20 +54,25 @@ def classify(signals: dict, baseline: dict, s: Settings) -> tuple[str, list[str]
         f"p95={p95*1000:.0f}ms (x{p95_ratio:.2f})" if p95_ratio
         else f"p95={p95*1000:.0f}ms (no baseline)"
     )
+    if thru_up:
+        notes.append("throughput elevated vs baseline")
 
     if thru < s.min_throughput_rps and not errors_up:
         notes.append("throughput below min — treating as idle/healthy")
         return HEALTHY, notes
 
-    if errors_up and thru_up and p95_up:
+    # slow AND (carrying much more load than baseline OR already failing)
+    # -> capacity exhaustion
+    if p95_up and (thru_up or errors_up):
         return SATURATION, notes
-    if errors_up and thru_flat and p95_flat:
+    # failing but still fast -> bad deploy / feature flag
+    if errors_up and p95_flat:
         return ERROR_SPIKE, notes
+    # slow at normal load, not failing -> slow downstream dependency
     if p95_up and not errors_up:
         return LATENCY_SPIKE, notes
     if errors_up:
-        # errors up but pattern is ambiguous — default to the flag rollback path
-        notes.append("errors elevated, pattern ambiguous -> ERROR_SPIKE")
+        notes.append("errors elevated, latency flat -> ERROR_SPIKE")
         return ERROR_SPIKE, notes
     return HEALTHY, notes
 

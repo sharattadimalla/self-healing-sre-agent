@@ -6,6 +6,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/_common.sh"
 
 require_stack
+reset_system
 trap 'stop_load' EXIT
 
 replicas() {
@@ -16,8 +17,8 @@ replicas() {
 seed_orders 30
 start_load baseline 15 3m
 
-say "Baseline for 30s so the agent warms its rolling baseline"
-sleep 30
+say "Baseline for 90s so the agent warms its rolling baseline"
+sleep 90
 stop_load
 
 say "Ramping load 10 -> 300 users (locust 'traffic' profile)"

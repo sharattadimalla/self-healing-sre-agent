@@ -22,7 +22,7 @@ class Base(DeclarativeBase):
     pass
 
 
-def _make_engine(url: str, pool_size: int) -> AsyncEngine:
+def _make_engine(url: str, pool_size: int, pool_timeout: float = 3.0) -> AsyncEngine:
     if url.startswith("sqlite"):
         return create_async_engine(
             url,
@@ -36,15 +36,17 @@ def _make_engine(url: str, pool_size: int) -> AsyncEngine:
         pool_size=pool_size,
         max_overflow=pool_size,
         pool_pre_ping=True,
+        pool_timeout=pool_timeout,
     )
 
 
 class Database:
-    def __init__(self, url: str, pool_size: int) -> None:
+    def __init__(self, url: str, pool_size: int, pool_timeout: float = 3.0) -> None:
         self._url = url
         self._pool_size = pool_size
+        self._pool_timeout = pool_timeout
         self._lock = asyncio.Lock()
-        self.engine: AsyncEngine = _make_engine(url, pool_size)
+        self.engine: AsyncEngine = _make_engine(url, pool_size, pool_timeout)
         self.sessionmaker: async_sessionmaker[AsyncSession] = async_sessionmaker(
             self.engine, expire_on_commit=False
         )
@@ -53,7 +55,7 @@ class Database:
         """Build a fresh engine, then dispose the old one (EC-04)."""
         async with self._lock:
             old = self.engine
-            new = _make_engine(self._url, self._pool_size)
+            new = _make_engine(self._url, self._pool_size, self._pool_timeout)
             self.engine = new
             self.sessionmaker = async_sessionmaker(new, expire_on_commit=False)
             await old.dispose()

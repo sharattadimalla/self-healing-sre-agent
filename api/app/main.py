@@ -25,7 +25,9 @@ logger = logging.getLogger("app.main")
 def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
 
-    database = Database(settings.database_url, settings.db_pool_size)
+    database = Database(
+        settings.database_url, settings.db_pool_size, settings.db_pool_timeout
+    )
     store = StateStore(settings.state_path)
     cache = ResponseCache(settings.cache_ttl_seconds)
 

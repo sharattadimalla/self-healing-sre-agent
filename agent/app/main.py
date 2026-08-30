@@ -61,7 +61,15 @@ class Agent:
 
         anomaly = result.get("anomaly", HEALTHY)
         if anomaly == HEALTHY:
-            self.deps.baseline.update(result.get("signals", {}))
+            signals = result.get("signals", {})
+            # Freeze the baseline once signals start to ramp, so a slow climb
+            # into an anomaly doesn't drag the reference along with it.
+            if self.deps.baseline.is_stable(
+                signals, warm_floor=self.settings.min_throughput_rps
+            ):
+                self.deps.baseline.update(signals)
+            else:
+                logger.info("baseline frozen (signals ramping): %s", signals)
         else:
             logger.info("run %s ended without interrupt (anomaly=%s)", thread_id, anomaly)
 

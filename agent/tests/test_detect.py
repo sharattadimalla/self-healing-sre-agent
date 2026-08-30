@@ -36,6 +36,21 @@ def test_saturation_when_throughput_p95_and_errors_all_up(settings):
     assert anomaly == SATURATION
 
 
+def test_saturation_on_traffic_ramp_without_errors_yet(settings):
+    # throughput far over baseline + p95 elevated, no 5xx yet -> capacity exhaustion
+    signals = {"throughput_rps": 300.0, "error_rate": 0.0, "p95_seconds": 0.6}
+    anomaly, _ = classify(signals, BASELINE, settings)
+    assert anomaly == SATURATION
+
+
+def test_saturation_when_errors_and_p95_up_even_if_throughput_ratio_settled(settings):
+    # the rolling baseline has already chased the ramp, so thru ratio ~1 —
+    # failing AND slow together is still capacity exhaustion, not a bad deploy
+    signals = {"throughput_rps": 22.0, "error_rate": 0.10, "p95_seconds": 0.7}
+    anomaly, _ = classify(signals, BASELINE, settings)
+    assert anomaly == SATURATION
+
+
 def test_idle_system_is_healthy_even_with_ratio_noise(settings):
     # throughput below min_throughput_rps -> treated as idle
     signals = {"throughput_rps": 0.2, "error_rate": 0.0, "p95_seconds": 2.0}

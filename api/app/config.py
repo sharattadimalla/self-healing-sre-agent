@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     # Storage
     database_url: str = "postgresql+asyncpg://orders:orders@db:5432/orders"
     db_pool_size: int = 5
+    # Fail fast when the pool is exhausted (capacity exhaustion -> 5xx) instead of
+    # the SQLAlchemy 30s default, so saturation surfaces as errors quickly.
+    db_pool_timeout: float = 3.0
 
     # Admin control plane
     admin_token: str = "dev-admin-token"

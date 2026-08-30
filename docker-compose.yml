@@ -15,7 +15,7 @@ x-api-env: &api-env
   DB_POOL_SIZE: ${DB_POOL_SIZE:-5}
   RATE_LIMIT_RPS: ${RATE_LIMIT_RPS:-20}
   RATE_LIMIT_BURST: ${RATE_LIMIT_BURST:-40}
-  CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-5}
+  CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS:-30}
 
 services:
   traefik:
@@ -36,6 +36,14 @@ services:
     # No container_name — scale with `--scale api=N`.
     deploy:
       replicas: ${API_REPLICAS:-2}
+      resources:
+        limits:
+          # Deliberately tight so the traffic-spike scenario actually saturates:
+          # under the 10▶300 ramp, CPU starvation drives p95 from ~95ms to
+          # ~600ms+ while throughput runs several× baseline. Scaling out to 4
+          # replicas restores headroom.
+          cpus: "${API_CPUS:-0.35}"
+          memory: 512M
     environment:
       <<: *api-env
     volumes:
@@ -98,6 +106,9 @@ services:
   prometheus:
     image: prom/prometheus:v2.55.1
     restart: unless-stopped
+    # root so docker_sd can read the mounted docker socket (Docker Desktop owns
+    # it root:root; the image's default `nobody` user gets EACCES).
+    user: root
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.retention.time=6h"
@@ -138,7 +149,7 @@ services:
       AGENT_MIN_REPLICAS: ${API_REPLICAS:-2}
       AGENT_MAX_REPLICAS: ${AGENT_MAX_REPLICAS:-6}
       AGENT_POLL_INTERVAL_SECONDS: ${AGENT_POLL_INTERVAL_SECONDS:-10}
-      AGENT_VERIFY_COOLDOWN_SECONDS: ${AGENT_VERIFY_COOLDOWN_SECONDS:-25}
+      AGENT_VERIFY_COOLDOWN_SECONDS: ${AGENT_VERIFY_COOLDOWN_SECONDS:-55}
       AGENT_ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AGENT_ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-opus-5}
       AGENT_SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}

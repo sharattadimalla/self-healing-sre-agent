@@ -26,6 +26,35 @@ class BaselineTracker:
     def ready(self) -> bool:
         return self._samples >= 3
 
+    def is_stable(
+        self, signals: dict[str, float], tol: float = 1.4, warm_floor: float = 0.0
+    ) -> bool:
+        """True while ``signals`` sit close to the current baseline.
+
+        Used to *stop feeding the baseline* once throughput / latency start to
+        ramp, so a slow climb into an anomaly doesn't drag the reference with it.
+
+        While the baseline throughput is still below ``warm_floor`` the system was
+        idle when the baseline started, so keep taking every sample — otherwise
+        the first burst of real traffic would freeze the baseline near zero.
+        """
+        with self._lock:
+            # Keep taking every sample until the baseline is properly warm: ~8
+            # polls covers Prometheus' 1m rate window filling after load starts
+            # (early samples read low purely as a measurement artifact).
+            if self._samples < 8:
+                return True
+            if self._values.get("throughput_rps", 0.0) < warm_floor:
+                return True  # baseline still reflects an idle system
+            for key in ("throughput_rps", "p95_seconds"):
+                base = self._values.get(key)
+                cur = signals.get(key)
+                if not base or cur is None:
+                    continue
+                if cur > base * tol or cur < base / tol:
+                    return False
+            return True
+
     def update(self, signals: dict[str, float]) -> dict[str, float]:
         with self._lock:
             for key, value in signals.items():

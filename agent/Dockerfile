@@ -15,10 +15,11 @@ COPY --from=dockercli /usr/local/libexec/docker/cli-plugins/docker-compose \
 
 WORKDIR /app
 
+# setuptools needs the package dir present during metadata prep, so copy the
+# sources before installing (rather than pyproject-then-code).
 COPY pyproject.toml ./
-RUN pip install --upgrade pip && pip install .
-
 COPY app ./app
+RUN pip install --upgrade pip && pip install .
 
 EXPOSE 8000
 

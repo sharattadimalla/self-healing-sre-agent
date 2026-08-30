@@ -5,13 +5,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${HERE}/_common.sh"
 
 require_stack
+reset_system
 trap 'clear_fault; stop_load' EXIT
 
 seed_orders 30
 start_load errors 25 10m
 
-say "Baseline for 30s so the agent warms its rolling baseline"
-sleep 30
+say "Baseline for 90s so the agent warms its rolling baseline"
+sleep 90
 
 say "Injecting error fault: 30% of requests -> HTTP 500"
 fault '{"type":"error","magnitude":0.3}'
